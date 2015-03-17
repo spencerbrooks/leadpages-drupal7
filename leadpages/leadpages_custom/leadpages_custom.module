@@ -1,0 +1,120 @@
+<?php
+
+/**
+ * @file
+ * Contains customizations to the landing_page and thank_you_page content types.
+ *
+ * @author
+ * Spencer Brooks <spencer@brooks.digital>
+ */
+
+/**
+ * Implements hook_form_alter().
+ *
+ * Quick way to apply the same changes across multiple forms.
+ */
+function leadpages_custom_form_alter(&$form, &$form_state, $form_id) {
+  // Set the content type forms which have the body field hidden.
+  switch ($form_id) {
+    case 'landing_page_node_form':
+    case 'thank_you_page_node_form':
+      // Hide the body field.
+      $form['body']['#access'] = FALSE;
+      break;
+  }
+}
+
+/**
+ * Implements hook_node_insert().
+ */
+function leadpages_custom_node_insert($node) {
+  _leadpages_custom_insert_body($node);
+}
+
+/**
+ * Implements hook_node_update().
+ */
+function leadpages_custom_node_update($node) {
+  _leadpages_custom_insert_body($node);
+}
+
+/**
+ * Helper function that inserts the uploaded HTML file into the node body.
+ *
+ * Is called on node create and update events.
+ *
+ * @param object $node
+ *   The node object that was passed via hook_node_insert() or
+ *   hook_node_update().
+ */
+function _leadpages_custom_insert_body($node) {
+  // We only care about landing or thank you pages.
+  if ($node->type == 'landing_page' || $node->type == 'thank_you_page') {
+    // Get the file ID and load the uploaded HTML file.
+    $fid = $node->field_html_file[LANGUAGE_NONE][0]['fid'];
+    $file = file_load($fid);
+
+    // Add a file usage record so Drupal doesn't complain (and so no one can
+    // delete the file while we're using it).
+    file_usage_add($file, 'leadpages_custom', 'html', $node->nid);
+
+    // Load the contents of the file and pass it into our helper function, which
+    // will insert the node title as a <title> tag into the <head>.
+    $html = file_get_contents($file->uri);
+    $body = _leadpages_custom_insert_title($html, $node->title);
+
+    // Load the landing page node inside an entity metadata wrapper so we can
+    // set and save values easily.
+    $wrapper = entity_metadata_wrapper('node', $node);
+
+    // Put the HTML inside the node body and save it.
+    $wrapper->body->set(array(
+      "value" => $body,
+      "format" => "no_filter",
+    ));
+    field_attach_update('node', $node);
+  }
+}
+
+/**
+ * Helper function that inserts the node title into a <title> tag inside <head>.
+ *
+ * @param string $html
+ *   The Leadpages HTML from the user-uploaded file.
+ *
+ * @param string $node_title
+ *   The node title.
+ *
+ * @return string
+ *   The HTML body with the <title> tag inserted.
+ */
+function _leadpages_custom_insert_title($html, $node_title) {
+  // If the HTML body already has a title tag, return it unmodified.
+  if (strpos($html, "<title>") !== FALSE) {
+    return $html;
+  }
+
+  // Get the site name to insert at the end of the title.
+  $site_name = variable_get('site_name');
+
+  // Assemble the <title> tag we want to insert.
+  $title = "<title>$node_title | $site_name</title>";
+
+  // Check to see if the <head> tag exists, and insert the title accordingly.
+  // If there is no <head> tag, then we leave HTML unaltered. Leadpages exports
+  // have <html> + <head> tags by default, so it's unlikely that in the future
+  // they will remove them.
+  if (strpos($html, "<head>") !== FALSE) {
+    // Get the HTML body up to and including the <head> tag, and separate it
+    // from the HTML that appears after the <head> tag.
+    $split_location = strpos($html, "<head>") + 6;
+
+    $html_before = substr($html, 0, $split_location);
+    $html_after = substr($html, $split_location);
+
+    // Reassemble the HTML body with the <title> tag in the correct position.
+    $html = $html_before . $title . $html_after;
+  }
+
+  return $html;
+}

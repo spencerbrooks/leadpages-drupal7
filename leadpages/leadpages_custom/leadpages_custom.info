@@ -1,0 +1,5 @@
+name = Leadpages Customizations
+description = Customizations to the landing page and thank you page content types. Sponsored by <a href="http://brooks.digital" target="_blank">Brooks Digital</a>.
+core = 7.x
+dependencies[] = leadpages_feature
+dependencies[] = entity
